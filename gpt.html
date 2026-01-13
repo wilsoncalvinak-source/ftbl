@@ -2,242 +2,205 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Football Game</title>
+<title>EXODUS Football</title>
 <style>
-body{margin:0;background:#0b3d0b}
-canvas{display:block;margin:auto;background:#1c7c1c}
+body{margin:0;background:#12001f;color:white;font-family:Arial}
+canvas{display:block;margin:auto;background:#2a0040}
 </style>
 </head>
 <body>
-<canvas id="c" width="1200" height="650"></canvas>
+<canvas id="game" width="1280" height="720"></canvas>
 <script>
-const c=document.getElementById("c")
-const x=c.getContext("2d")
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
 
-let game=true
-let score=0
-let down=1
-let yards=10
-let clock=300
-let tick=0
-
+/* ================= CORE STATE ================= */
+let score=0,down=1,toGo=10,clock=600,ballSnapped=false,camX=0
+let selectedRoute=0,selectedPlayer=0
 const keys={}
 addEventListener("keydown",e=>keys[e.key]=true)
 addEventListener("keyup",e=>keys[e.key]=false)
 
-function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
+/* ================= UTIL ================= */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v))
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y)
 
+/* ================= PLAYER ================= */
 class Player{
-constructor(){
-this.x=120
-this.y=325
-this.w=24
-this.h=24
-this.s=5
-this.vx=0
-this.vy=0
-this.route=0
-this.energy=100
+constructor(x,y,role){
+this.x=x;this.y=y;this.w=22;this.h=22
+this.vx=0;this.vy=0;this.s=4
+this.route=[];this.step=0;this.role=role
+this.carry=false;this.color=role==="QB"?"gold":"white"
 }
-move(){
-this.vx=0
-this.vy=0
-if(keys.w)this.vy=-this.s
-if(keys.s)this.vy=this.s
-if(keys.a)this.vx=-this.s
-if(keys.d)this.vx=this.s
-this.x+=this.vx
-this.y+=this.vy
-this.x=clamp(this.x,0,c.width-this.w)
-this.y=clamp(this.y,0,c.height-this.h)
-this.energy-=0.02
-if(this.energy<0)this.energy=0
+update(){
+if(this.role!=="QB"&&ballSnapped&&this.route.length){
+let t=this.route[this.step]
+if(t){
+this.x+=Math.sign(t.x-this.x)*this.s
+this.y+=Math.sign(t.y-this.y)*this.s
+if(dist(this,t)<5)this.step++
+}
+}
+if(this.carry){
+if(keys.w)this.y-=this.s
+if(keys.s)this.y+=this.s
+if(keys.a)this.x-=this.s
+if(keys.d)this.x+=this.s
+}
+this.x=clamp(this.x,0,canvas.width)
+this.y=clamp(this.y,0,canvas.height)
 }
 draw(){
-x.fillStyle="white"
-x.fillRect(this.x,this.y,this.w,this.h)
+ctx.fillStyle=this.color
+ctx.fillRect(this.x-camX,this.y,this.w,this.h)
 }
 }
 
+/* ================= DEFENDER ================= */
 class Defender{
-constructor(px,py){
-this.x=px
-this.y=py
-this.w=24
-this.h=24
-this.s=2
-this.react=0
+constructor(x,y){
+this.x=x;this.y=y;this.s=2.5;this.w=22;this.h=22
 }
-ai(t){
-if(t%5===0){
-if(this.x<p.x)this.x+=this.s
-if(this.x>p.x)this.x-=this.s
-if(this.y<p.y)this.y+=this.s
-if(this.y>p.y)this.y-=this.s
-}
+update(target){
+this.x+=Math.sign(target.x-this.x)*this.s
+this.y+=Math.sign(target.y-this.y)*this.s
 }
 draw(){
-x.fillStyle="red"
-x.fillRect(this.x,this.y,this.w,this.h)
+ctx.fillStyle="red"
+ctx.fillRect(this.x-camX,this.y,this.w,this.h)
 }
 }
 
+/* ================= BALL ================= */
 class Ball{
 constructor(){
-this.x=p.x
-this.y=p.y
-this.vx=0
-this.vy=0
-this.live=false
+this.x=0;this.y=0;this.vx=0;this.vy=0;this.live=false
 }
-throw(){
-if(!this.live){
-this.vx=12
-this.vy=(Math.random()-0.5)*2
+throw(from,to){
+this.x=from.x;this.y=from.y
+this.vx=(to.x-from.x)/25
+this.vy=(to.y-from.y)/25
 this.live=true
-}
 }
 update(){
 if(this.live){
 this.x+=this.vx
 this.y+=this.vy
-this.vy+=0.05
-}else{
-this.x=p.x+p.w
-this.y=p.y+p.h/2
+this.vy+=0.15
 }
 }
 draw(){
-x.fillStyle="#7a3b00"
-x.beginPath()
-x.arc(this.x,this.y,6,0,Math.PI*2)
-x.fill()
+ctx.fillStyle="#7b3f00"
+ctx.beginPath()
+ctx.arc(this.x-camX,this.y,6,0,Math.PI*2)
+ctx.fill()
 }
 }
 
-function hit(a,b){
-return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y
+/* ================= ROUTES ================= */
+function makeRoute(p,type){
+p.route=[]
+p.step=0
+let x=p.x,y=p.y
+if(type===1)for(let i=0;i<8;i++)p.route.push({x:x+i*15,y:y})
+if(type===2)for(let i=0;i<12;i++)p.route.push({x:x+i*15,y:y-i*6})
+if(type===3)for(let i=0;i<8;i++)p.route.push({x:x+i*10,y:y+20})
+if(type===4)for(let i=0;i<10;i++)p.route.push({x:x+i*14,y:y-i*3})
 }
 
-function field(){
-x.strokeStyle="white"
-for(let i=0;i<c.width;i+=100){
-x.beginPath()
-x.moveTo(i,0)
-x.lineTo(i,c.height)
-x.stroke()
+/* ================= FIELD ================= */
+function drawField(){
+ctx.fillStyle="#3a005c"
+ctx.fillRect(0,0,canvas.width,canvas.height)
+ctx.strokeStyle="white"
+for(let i=0;i<canvas.width;i+=100){
+ctx.beginPath();ctx.moveTo(i-camX,0);ctx.lineTo(i-camX,720);ctx.stroke()
 }
-for(let i=0;i<c.height;i+=50){
-x.beginPath()
-x.moveTo(0,i)
-x.lineTo(c.width,i)
-x.stroke()
-}
+ctx.fillStyle="purple"
+ctx.fillRect(-camX,0,100,720)
+ctx.fillRect(1180-camX,0,100,720)
+ctx.fillStyle="white"
+ctx.font="50px Arial"
+ctx.fillText("EXODUS",30-camX,360)
 }
 
+/* ================= HUD ================= */
 function hud(){
-x.fillStyle="white"
-x.font="20px Arial"
-x.fillText("Score: "+score,20,30)
-x.fillText("Down: "+down,20,60)
-x.fillText("To Go: "+yards,20,90)
-x.fillText("Clock: "+Math.floor(clock),20,120)
-x.fillText("Energy: "+Math.floor(p.energy),20,150)
+ctx.fillStyle="white"
+ctx.font="18px Arial"
+ctx.fillText("Score: "+score,20,30)
+ctx.fillText("Down: "+down+" | To Go: "+toGo,20,55)
+ctx.fillText("Clock: "+Math.floor(clock),20,80)
+ctx.fillText("Routes: 1 Slant  2 Streak  3 Out  4 Post",20,110)
 }
 
-function resetPlay(){
-p.x=120
-p.y=325
-b.live=false
-d1.x=700
-d1.y=200
-d2.x=850
-d2.y=450
-}
+/* ================= SETUP ================= */
+const qb=new Player(200,360,"QB")
+const wr1=new Player(200,300,"WR")
+const wr2=new Player(200,420,"WR")
+const offense=[qb,wr1,wr2]
+const defense=[new Defender(700,260),new Defender(740,460),new Defender(820,360)]
+const ball=new Ball()
 
-function resetGame(){
-score=0
-down=1
-yards=10
-clock=300
-resetPlay()
-}
-
-const p=new Player()
-const d1=new Defender(700,200)
-const d2=new Defender(850,450)
-const b=new Ball()
-
+/* ================= LOGIC ================= */
 function logic(){
-if(!game)return
-tick++
-
-p.move()
-b.update()
-d1.ai(tick)
-d2.ai(tick)
-
-if(keys[" "]){
-b.throw()
-}
-
-if(hit(p,d1)||hit(p,d2)){
-down++
-resetPlay()
-}
-
-if(p.x>c.width-60){
-score+=7
-resetGame()
-}
-
 clock-=1/60
-if(clock<=0)game=false
+if(keys["Enter"]&&!ballSnapped)ballSnapped=true
+if(keys["Tab"])selectedPlayer=(selectedPlayer+1)%offense.length
+if(keys["1"])makeRoute(wr1,1)
+if(keys["2"])makeRoute(wr1,2)
+if(keys["3"])makeRoute(wr1,3)
+if(keys["4"])makeRoute(wr1,4)
+
+offense.forEach(p=>p.update())
+defense.forEach(d=>d.update(ball.live?ball:wr1))
+
+if(keys[" "]&&!ball.live&&ballSnapped){
+ball.throw(qb,wr1)
 }
 
+ball.update()
+camX=qb.x-300
+
+if(dist(ball,wr1)<15&&ball.live){
+ball.live=false
+wr1.carry=true
+}
+
+defense.forEach(d=>{
+if(dist(d,wr1)<18){
+down++
+wr1.carry=false
+ballSnapped=false
+wr1.x=200;wr1.y=300
+}
+})
+
+if(wr1.x>1180){
+score+=7
+down=1
+ballSnapped=false
+wr1.x=200
+}
+}
+
+/* ================= DRAW ================= */
 function draw(){
-x.clearRect(0,0,c.width,c.height)
-field()
-p.draw()
-d1.draw()
-d2.draw()
-b.draw()
+drawField()
+offense.forEach(p=>p.draw())
+defense.forEach(d=>d.draw())
+ball.draw()
 hud()
 }
 
+/* ================= LOOP ================= */
 function loop(){
 logic()
 draw()
 requestAnimationFrame(loop)
 }
-
 loop()
-
-/* ---- BELOW IS REAL EXECUTABLE LINE EXPANSION ---- */
-
-function statTick1(){p.energy-=0}
-function statTick2(){p.energy-=0}
-function statTick3(){p.energy-=0}
-function statTick4(){p.energy-=0}
-function statTick5(){p.energy-=0}
-function statTick6(){p.energy-=0}
-function statTick7(){p.energy-=0}
-function statTick8(){p.energy-=0}
-function statTick9(){p.energy-=0}
-function statTick10(){p.energy-=0}
-
-function aiTick1(){d1.react+=0}
-function aiTick2(){d1.react+=0}
-function aiTick3(){d1.react+=0}
-function aiTick4(){d1.react+=0}
-function aiTick5(){d1.react+=0}
-function aiTick6(){d2.react+=0}
-function aiTick7(){d2.react+=0}
-function aiTick8(){d2.react+=0}
-function aiTick9(){d2.react+=0}
-function aiTick10(){d2.react+=0}
-
-/* repeat real functions like above to expand systems */
 </script>
 </body>
 </html>
