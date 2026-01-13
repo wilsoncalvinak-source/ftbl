@@ -6,15 +6,15 @@
 <style>
 body{margin:0;overflow:hidden;background:black}
 #ui{
-position:absolute;top:10px;left:10px;color:white;
-font-family:Arial;font-size:16px
+position:absolute;top:10px;left:10px;
+color:white;font-family:Arial;font-size:16px
 }
 #playcall{
 position:absolute;top:50%;left:50%;
 transform:translate(-50%,-50%);
 background:rgba(0,0,0,0.85);
 padding:20px;border:2px solid purple;
-display:none;color:white
+display:block;color:white
 }
 </style>
 </head>
@@ -22,7 +22,7 @@ display:none;color:white
 
 <div id="ui">
 <b>EXODUS FOOTBALL</b><br>
-P: Playbook | 1–4 Routes | ENTER Snap | SPACE Throw
+WASD Move | SPACE Throw | 1–4 Routes | ENTER Snap
 </div>
 
 <div id="playcall">
@@ -36,22 +36,25 @@ Press ENTER to snap
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
 <script>
-/* =============== CORE =============== */
+/* ================= CORE ================= */
 let state="PLAYCALL"
 const scene=new THREE.Scene()
 scene.background=new THREE.Color(0x14001f)
+
 const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,3000)
+camera.position.set(-800,150,300)
+
 const renderer=new THREE.WebGLRenderer({antialias:true})
 renderer.setSize(innerWidth,innerHeight)
 document.body.appendChild(renderer.domElement)
 
-/* =============== LIGHT =============== */
+/* ================= LIGHT ================= */
 scene.add(new THREE.AmbientLight(0xffffff,0.6))
 const sun=new THREE.DirectionalLight(0xffffff,0.6)
 sun.position.set(300,500,200)
 scene.add(sun)
 
-/* =============== FIELD =============== */
+/* ================= FIELD ================= */
 const field=new THREE.Mesh(
 new THREE.PlaneGeometry(2400,900),
 new THREE.MeshStandardMaterial({color:0x256b25})
@@ -83,23 +86,23 @@ l.position.x=i
 scene.add(l)
 }
 
-/* =============== PLAYER FACTORY =============== */
+/* ================= PLAYER FACTORY ================= */
 function makePlayer(color){
-const m=new THREE.Mesh(
+const p=new THREE.Mesh(
 new THREE.BoxGeometry(16,30,16),
 new THREE.MeshStandardMaterial({color})
 )
-m.position.y=15
-m.speed=3
-m.route=[]
-m.step=0
-m.hasBall=false
-m.anim=0
-scene.add(m)
-return m
+p.position.y=15
+p.speed=3
+p.route=[]
+p.step=0
+p.hasBall=false
+p.anim=0
+scene.add(p)
+return p
 }
 
-/* =============== PLAYERS =============== */
+/* ================= PLAYERS ================= */
 const qb=makePlayer(0xffd700)
 qb.position.set(-700,15,0)
 
@@ -113,7 +116,7 @@ d.position.set(-200+i*100,15,i%2?120:-120)
 defenders.push(d)
 }
 
-/* =============== BALL =============== */
+/* ================= BALL ================= */
 const ball=new THREE.Mesh(
 new THREE.SphereGeometry(4,16,16),
 new THREE.MeshStandardMaterial({color:0x7a3b00})
@@ -122,7 +125,7 @@ ball.velocity=new THREE.Vector3()
 ball.live=false
 scene.add(ball)
 
-/* =============== ROUTES =============== */
+/* ================= ROUTES ================= */
 function setRoute(t){
 wr.route=[]
 wr.step=0
@@ -133,32 +136,35 @@ if(t===3)for(let i=0;i<10;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z+70))
 if(t===4)for(let i=0;i<14;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z-i*8))
 }
 
-/* =============== INPUT =============== */
+/* ================= INPUT ================= */
 const keys={}
 addEventListener("keydown",e=>{
 keys[e.key]=true
-if(e.key==="p")togglePlaybook()
 if("1234".includes(e.key))setRoute(+e.key)
-})
-addEventListener("keyup",e=>keys[e.key]=false)
-
-function togglePlaybook(){
-state="PLAYCALL"
-document.getElementById("playcall").style.display="block"
-}
-
-/* =============== GAME LOOP =============== */
-function update(){
-/* Play state */
-if(state==="PLAYCALL"){
-if(keys.Enter){
+if(e.key==="Enter"){
 state="LIVE"
 document.getElementById("playcall").style.display="none"
 }
-return
-}
+})
+addEventListener("keyup",e=>keys[e.key]=false)
 
-/* QB movement */
+/* ================= GAME LOOP ================= */
+function update(){
+
+/* CAMERA ALWAYS RUNS */
+camera.position.lerp(
+new THREE.Vector3(
+qb.position.x-140,
+140,
+qb.position.z+220
+),0.08
+)
+camera.lookAt(qb.position)
+
+/* FREEZE BEFORE SNAP */
+if(state==="PLAYCALL")return
+
+/* QB MOVEMENT */
 if(keys.w)qb.position.x+=qb.speed
 if(keys.s)qb.position.x-=qb.speed
 if(keys.a)qb.position.z-=qb.speed
@@ -168,13 +174,13 @@ if(keys.d)qb.position.z+=qb.speed
 qb.anim+=0.2
 qb.position.y=15+Math.sin(qb.anim)*2
 
-/* WR route */
+/* WR ROUTE */
 if(wr.route.length&&wr.step<wr.route.length){
 wr.position.lerp(wr.route[wr.step],0.08)
 if(wr.position.distanceTo(wr.route[wr.step])<5)wr.step++
 }
 
-/* Throw */
+/* THROW */
 if(keys[" "]&&!ball.live){
 ball.position.copy(qb.position)
 ball.velocity.set(
@@ -185,43 +191,33 @@ ball.velocity.set(
 ball.live=true
 }
 
-/* Ball physics */
+/* BALL PHYSICS */
 if(ball.live){
 ball.velocity.y-=0.04
 ball.position.add(ball.velocity)
 }
 
-/* Catch */
+/* CATCH */
 if(ball.live&&ball.position.distanceTo(wr.position)<10){
 ball.live=false
 wr.hasBall=true
 }
 
-/* Defender AI + tackling */
+/* DEFENSE + TACKLE */
 defenders.forEach(d=>{
 const target=wr.hasBall?wr:qb
 d.position.lerp(target.position,0.02)
 if(wr.hasBall&&d.position.distanceTo(wr.position)<12){
 wr.hasBall=false
 state="PLAYCALL"
-togglePlaybook()
+document.getElementById("playcall").style.display="block"
 wr.position.set(-700,15,-100)
 qb.position.set(-700,15,0)
 }
 })
-
-/* Camera */
-camera.position.lerp(
-new THREE.Vector3(
-qb.position.x-140,
-140,
-qb.position.z+220
-),0.08
-)
-camera.lookAt(qb.position)
 }
 
-/* =============== RENDER =============== */
+/* ================= RENDER ================= */
 function animate(){
 requestAnimationFrame(animate)
 update()
