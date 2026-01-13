@@ -4,133 +4,172 @@
 <meta charset="utf-8">
 <title>EXODUS 3D Football</title>
 <style>
-body { margin:0; overflow:hidden; background:black }
-#ui {
-position:absolute; top:10px; left:10px; color:white;
-font-family:Arial; font-size:16px;
+body{margin:0;overflow:hidden;background:black}
+#ui{
+position:absolute;top:10px;left:10px;color:white;
+font-family:Arial;font-size:16px
+}
+#playcall{
+position:absolute;top:50%;left:50%;
+transform:translate(-50%,-50%);
+background:rgba(0,0,0,0.85);
+padding:20px;border:2px solid purple;
+display:none;color:white
 }
 </style>
 </head>
 <body>
+
 <div id="ui">
 <b>EXODUS FOOTBALL</b><br>
-WASD Move | Mouse Look | Space Throw<br>
-1 Slant | 2 Streak | 3 Out | 4 Post
+P: Playbook | 1–4 Routes | ENTER Snap | SPACE Throw
+</div>
+
+<div id="playcall">
+<b>PLAYBOOK</b><br><br>
+1 – Slant<br>
+2 – Streak<br>
+3 – Out<br>
+4 – Post<br><br>
+Press ENTER to snap
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
-
 <script>
-/* ================= SCENE ================= */
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x1b0033)
-
-const camera = new THREE.PerspectiveCamera(
-75, window.innerWidth/window.innerHeight, 0.1, 2000
-)
-
-const renderer = new THREE.WebGLRenderer({ antialias:true })
-renderer.setSize(window.innerWidth, window.innerHeight)
+/* =============== CORE =============== */
+let state="PLAYCALL"
+const scene=new THREE.Scene()
+scene.background=new THREE.Color(0x14001f)
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,3000)
+const renderer=new THREE.WebGLRenderer({antialias:true})
+renderer.setSize(innerWidth,innerHeight)
 document.body.appendChild(renderer.domElement)
 
-/* ================= LIGHTING ================= */
+/* =============== LIGHT =============== */
 scene.add(new THREE.AmbientLight(0xffffff,0.6))
-const sun = new THREE.DirectionalLight(0xffffff,0.6)
+const sun=new THREE.DirectionalLight(0xffffff,0.6)
 sun.position.set(300,500,200)
 scene.add(sun)
 
-/* ================= FIELD ================= */
-const fieldGeo = new THREE.PlaneGeometry(2000,800)
-const fieldMat = new THREE.MeshStandardMaterial({ color:0x2a7b2a })
-const field = new THREE.Mesh(fieldGeo,fieldMat)
-field.rotation.x = -Math.PI/2
+/* =============== FIELD =============== */
+const field=new THREE.Mesh(
+new THREE.PlaneGeometry(2400,900),
+new THREE.MeshStandardMaterial({color:0x256b25})
+)
+field.rotation.x=-Math.PI/2
 scene.add(field)
 
+/* Endzones */
+function endzone(x){
+const ez=new THREE.Mesh(
+new THREE.PlaneGeometry(200,900),
+new THREE.MeshStandardMaterial({color:0x4b006e})
+)
+ez.rotation.x=-Math.PI/2
+ez.position.x=x
+scene.add(ez)
+}
+endzone(-1100)
+endzone(1100)
+
 /* Yard lines */
-for(let i=-900;i<=900;i+=100){
-const lGeo = new THREE.PlaneGeometry(4,800)
-const lMat = new THREE.MeshBasicMaterial({ color:0xffffff })
-const line = new THREE.Mesh(lGeo,lMat)
-line.rotation.x=-Math.PI/2
-line.position.x=i
-scene.add(line)
+for(let i=-1000;i<=1000;i+=100){
+const l=new THREE.Mesh(
+new THREE.PlaneGeometry(4,900),
+new THREE.MeshBasicMaterial({color:0xffffff})
+)
+l.rotation.x=-Math.PI/2
+l.position.x=i
+scene.add(l)
 }
 
-/* ================= PLAYER FACTORY ================= */
+/* =============== PLAYER FACTORY =============== */
 function makePlayer(color){
-const geo = new THREE.BoxGeometry(15,30,15)
-const mat = new THREE.MeshStandardMaterial({ color })
-const p = new THREE.Mesh(geo,mat)
-p.position.y = 15
-p.speed = 3
-p.route = []
-p.step = 0
-p.hasBall = false
-scene.add(p)
-return p
+const m=new THREE.Mesh(
+new THREE.BoxGeometry(16,30,16),
+new THREE.MeshStandardMaterial({color})
+)
+m.position.y=15
+m.speed=3
+m.route=[]
+m.step=0
+m.hasBall=false
+m.anim=0
+scene.add(m)
+return m
 }
 
-/* ================= BALL ================= */
-const ballGeo = new THREE.SphereGeometry(4,16,16)
-const ballMat = new THREE.MeshStandardMaterial({ color:0x7a3b00 })
-const ball = new THREE.Mesh(ballGeo,ballMat)
-ball.velocity = new THREE.Vector3()
-ball.live = false
-scene.add(ball)
-
-/* ================= PLAYERS ================= */
-const qb = makePlayer(0xffd700)
+/* =============== PLAYERS =============== */
+const qb=makePlayer(0xffd700)
 qb.position.set(-700,15,0)
 
-const wr = makePlayer(0xffffff)
-wr.position.set(-700,15,-80)
+const wr=makePlayer(0xffffff)
+wr.position.set(-700,15,-100)
 
-const defenders = []
+const defenders=[]
 for(let i=0;i<4;i++){
-const d = makePlayer(0xaa0000)
-d.position.set(-200+i*80,15,(i%2?100:-100))
+const d=makePlayer(0xaa0000)
+d.position.set(-200+i*100,15,i%2?120:-120)
 defenders.push(d)
 }
 
-/* ================= ROUTES ================= */
-function setRoute(type){
+/* =============== BALL =============== */
+const ball=new THREE.Mesh(
+new THREE.SphereGeometry(4,16,16),
+new THREE.MeshStandardMaterial({color:0x7a3b00})
+)
+ball.velocity=new THREE.Vector3()
+ball.live=false
+scene.add(ball)
+
+/* =============== ROUTES =============== */
+function setRoute(t){
 wr.route=[]
 wr.step=0
 let x=wr.position.x,z=wr.position.z
-if(type===1)for(let i=0;i<12;i++)wr.route.push(new THREE.Vector3(x+i*20,15,z))
-if(type===2)for(let i=0;i<18;i++)wr.route.push(new THREE.Vector3(x+i*20,15,z))
-if(type===3)for(let i=0;i<12;i++)wr.route.push(new THREE.Vector3(x+i*15,15,z+60))
-if(type===4)for(let i=0;i<16;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z-i*8))
+if(t===1)for(let i=0;i<10;i++)wr.route.push(new THREE.Vector3(x+i*20,15,z))
+if(t===2)for(let i=0;i<16;i++)wr.route.push(new THREE.Vector3(x+i*22,15,z))
+if(t===3)for(let i=0;i<10;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z+70))
+if(t===4)for(let i=0;i<14;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z-i*8))
 }
 
-/* ================= INPUT ================= */
+/* =============== INPUT =============== */
 const keys={}
 addEventListener("keydown",e=>{
 keys[e.key]=true
-if(e.key==="1")setRoute(1)
-if(e.key==="2")setRoute(2)
-if(e.key==="3")setRoute(3)
-if(e.key==="4")setRoute(4)
+if(e.key==="p")togglePlaybook()
+if("1234".includes(e.key))setRoute(+e.key)
 })
 addEventListener("keyup",e=>keys[e.key]=false)
 
-/* Mouse look */
-let mx=0,my=0
-addEventListener("mousemove",e=>{
-mx=(e.clientX/window.innerWidth-0.5)*2
-my=(e.clientY/window.innerHeight-0.5)*2
-})
+function togglePlaybook(){
+state="PLAYCALL"
+document.getElementById("playcall").style.display="block"
+}
 
-/* ================= GAME LOOP ================= */
+/* =============== GAME LOOP =============== */
 function update(){
+/* Play state */
+if(state==="PLAYCALL"){
+if(keys.Enter){
+state="LIVE"
+document.getElementById("playcall").style.display="none"
+}
+return
+}
+
 /* QB movement */
 if(keys.w)qb.position.x+=qb.speed
 if(keys.s)qb.position.x-=qb.speed
 if(keys.a)qb.position.z-=qb.speed
 if(keys.d)qb.position.z+=qb.speed
 
+/* Run animation */
+qb.anim+=0.2
+qb.position.y=15+Math.sin(qb.anim)*2
+
 /* WR route */
-if(wr.route.length && wr.step<wr.route.length){
+if(wr.route.length&&wr.step<wr.route.length){
 wr.position.lerp(wr.route[wr.step],0.08)
 if(wr.position.distanceTo(wr.route[wr.step])<5)wr.step++
 }
@@ -139,42 +178,50 @@ if(wr.position.distanceTo(wr.route[wr.step])<5)wr.step++
 if(keys[" "]&&!ball.live){
 ball.position.copy(qb.position)
 ball.velocity.set(
-(wr.position.x-qb.position.x)/30,
-0.8,
-(wr.position.z-qb.position.z)/30
+(wr.position.x-qb.position.x)/28,
+0.9,
+(wr.position.z-qb.position.z)/28
 )
 ball.live=true
 }
 
 /* Ball physics */
 if(ball.live){
-ball.velocity.y-=0.03
+ball.velocity.y-=0.04
 ball.position.add(ball.velocity)
 }
 
 /* Catch */
-if(ball.position.distanceTo(wr.position)<10 && ball.live){
+if(ball.live&&ball.position.distanceTo(wr.position)<10){
 ball.live=false
 wr.hasBall=true
 }
 
-/* Defender AI */
+/* Defender AI + tackling */
 defenders.forEach(d=>{
-d.position.lerp(wr.hasBall?wr.position:qb.position,0.01)
+const target=wr.hasBall?wr:qb
+d.position.lerp(target.position,0.02)
+if(wr.hasBall&&d.position.distanceTo(wr.position)<12){
+wr.hasBall=false
+state="PLAYCALL"
+togglePlaybook()
+wr.position.set(-700,15,-100)
+qb.position.set(-700,15,0)
+}
 })
 
-/* Camera follow */
+/* Camera */
 camera.position.lerp(
 new THREE.Vector3(
-qb.position.x-120,
-120,
-qb.position.z+200
+qb.position.x-140,
+140,
+qb.position.z+220
 ),0.08
 )
 camera.lookAt(qb.position)
 }
 
-/* ================= RENDER ================= */
+/* =============== RENDER =============== */
 function animate(){
 requestAnimationFrame(animate)
 update()
@@ -182,10 +229,10 @@ renderer.render(scene,camera)
 }
 animate()
 
-window.addEventListener("resize",()=>{
-camera.aspect=window.innerWidth/window.innerHeight
+addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight
 camera.updateProjectionMatrix()
-renderer.setSize(window.innerWidth,window.innerHeight)
+renderer.setSize(innerWidth,innerHeight)
 })
 </script>
 </body>
