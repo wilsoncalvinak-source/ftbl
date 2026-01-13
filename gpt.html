@@ -1,235 +1,285 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>EXODUS 3D Football</title>
+<meta charset="UTF-8">
+<title>EXODUS FOOTBALL 26</title>
 <style>
-body{margin:0;overflow:hidden;background:black}
-#ui{
-position:absolute;top:10px;left:10px;
-color:white;font-family:Arial;font-size:16px
+html,body{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  background:#000;
+  font-family:Arial,Helvetica,sans-serif;
+  color:white;
 }
-#playcall{
-position:absolute;top:50%;left:50%;
-transform:translate(-50%,-50%);
-background:rgba(0,0,0,0.85);
-padding:20px;border:2px solid purple;
-display:block;color:white
+#hud{
+  position:fixed;
+  top:10px;
+  left:10px;
+  z-index:10;
+  font-size:14px;
+}
+#playbook{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  border:2px solid purple;
+  padding:12px;
+  background:rgba(0,0,0,0.8);
+  display:none;
+}
+#playbook h3{margin:0 0 6px 0;text-align:center;}
+#crosshair{
+  position:fixed;
+  top:50%;
+  left:50%;
+  width:10px;
+  height:10px;
+  transform:translate(-50%,-50%);
+  border:1px solid white;
 }
 </style>
 </head>
 <body>
 
-<div id="ui">
-<b>EXODUS FOOTBALL</b><br>
-WASD Move | SPACE Throw | 1–4 Routes | ENTER Snap
+<div id="hud">
+<b>EXODUS FOOTBALL 26</b><br>
+WASD Move | Mouse Look | SPACE Throw | ENTER Snap<br>
+1 Slant | 2 Streak | 3 Out | 4 Post<br>
+Down: <span id="down">1</span> &nbsp; Ball on: <span id="yard">25</span>
 </div>
 
-<div id="playcall">
-<b>PLAYBOOK</b><br><br>
+<div id="playbook">
+<h3>PLAYBOOK</h3>
 1 – Slant<br>
 2 – Streak<br>
 3 – Out<br>
 4 – Post<br><br>
-Press ENTER to snap
+<b>Press ENTER to Snap</b>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<div id="crosshair"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152/build/three.min.js"></script>
+
 <script>
-/* ================= CORE ================= */
-let state="PLAYCALL"
-const scene=new THREE.Scene()
-scene.background=new THREE.Color(0x14001f)
+/* ===============================
+   CORE GAME STATE
+================================ */
+let scene,camera,renderer,clock;
+let state="PLAYCALL";
+let keys={},mouse={x:0,y:0};
+let down=1,ballYard=25;
+let currentRoute=1;
+let snapped=false;
+let ball,ballVel=new THREE.Vector3();
 
-const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,3000)
-camera.position.set(-800,150,300)
+/* ===============================
+   INIT
+================================ */
+init();
+animate();
 
-const renderer=new THREE.WebGLRenderer({antialias:true})
-renderer.setSize(innerWidth,innerHeight)
-document.body.appendChild(renderer.domElement)
+function init(){
+  scene=new THREE.Scene();
+  scene.fog=new THREE.Fog(0x000000,400,1600);
 
-/* ================= LIGHT ================= */
-scene.add(new THREE.AmbientLight(0xffffff,0.6))
-const sun=new THREE.DirectionalLight(0xffffff,0.6)
-sun.position.set(300,500,200)
-scene.add(sun)
+  camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,1,3000);
+  camera.position.set(-600,180,0);
 
-/* ================= FIELD ================= */
-const field=new THREE.Mesh(
-new THREE.PlaneGeometry(2400,900),
-new THREE.MeshStandardMaterial({color:0x256b25})
-)
-field.rotation.x=-Math.PI/2
-scene.add(field)
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(innerWidth,innerHeight);
+  document.body.appendChild(renderer.domElement);
 
-/* Endzones */
-function endzone(x){
-const ez=new THREE.Mesh(
-new THREE.PlaneGeometry(200,900),
-new THREE.MeshStandardMaterial({color:0x4b006e})
-)
-ez.rotation.x=-Math.PI/2
-ez.position.x=x
-scene.add(ez)
-}
-endzone(-1100)
-endzone(1100)
+  clock=new THREE.Clock();
 
-/* Yard lines */
-for(let i=-1000;i<=1000;i+=100){
-const l=new THREE.Mesh(
-new THREE.PlaneGeometry(4,900),
-new THREE.MeshBasicMaterial({color:0xffffff})
-)
-l.rotation.x=-Math.PI/2
-l.position.x=i
-scene.add(l)
-}
+  /* LIGHTING */
+  scene.add(new THREE.AmbientLight(0xffffff,0.5));
+  let sun=new THREE.DirectionalLight(0xffffff,0.8);
+  sun.position.set(300,800,200);
+  scene.add(sun);
 
-/* ================= PLAYER FACTORY ================= */
-function makePlayer(color){
-const p=new THREE.Mesh(
-new THREE.BoxGeometry(16,30,16),
-new THREE.MeshStandardMaterial({color})
-)
-p.position.y=15
-p.speed=3
-p.route=[]
-p.step=0
-p.hasBall=false
-p.anim=0
-scene.add(p)
-return p
-}
+  /* FIELD */
+  let field=new THREE.Mesh(
+    new THREE.PlaneGeometry(2000,800),
+    new THREE.MeshStandardMaterial({color:0x1f8b4c})
+  );
+  field.rotation.x=-Math.PI/2;
+  scene.add(field);
 
-/* ================= PLAYERS ================= */
-const qb=makePlayer(0xffd700)
-qb.position.set(-700,15,0)
+  /* ENDZONES */
+  addEndzone(-1000,0x4b0082);
+  addEndzone(1000,0x4b0082);
 
-const wr=makePlayer(0xffffff)
-wr.position.set(-700,15,-100)
+  /* YARD LINES */
+  for(let i=-900;i<=900;i+=100){
+    let line=new THREE.Mesh(
+      new THREE.PlaneGeometry(4,800),
+      new THREE.MeshBasicMaterial({color:0xffffff})
+    );
+    line.rotation.x=-Math.PI/2;
+    line.position.x=i;
+    scene.add(line);
+  }
 
-const defenders=[]
-for(let i=0;i<4;i++){
-const d=makePlayer(0xaa0000)
-d.position.set(-200+i*100,15,i%2?120:-120)
-defenders.push(d)
-}
+  /* PLAYERS */
+  createPlayers();
 
-/* ================= BALL ================= */
-const ball=new THREE.Mesh(
-new THREE.SphereGeometry(4,16,16),
-new THREE.MeshStandardMaterial({color:0x7a3b00})
-)
-ball.velocity=new THREE.Vector3()
-ball.live=false
-scene.add(ball)
+  /* BALL */
+  ball=new THREE.Mesh(
+    new THREE.SphereGeometry(4,16,16),
+    new THREE.MeshStandardMaterial({color:0x8b4513})
+  );
+  scene.add(ball);
 
-/* ================= ROUTES ================= */
-function setRoute(t){
-wr.route=[]
-wr.step=0
-let x=wr.position.x,z=wr.position.z
-if(t===1)for(let i=0;i<10;i++)wr.route.push(new THREE.Vector3(x+i*20,15,z))
-if(t===2)for(let i=0;i<16;i++)wr.route.push(new THREE.Vector3(x+i*22,15,z))
-if(t===3)for(let i=0;i<10;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z+70))
-if(t===4)for(let i=0;i<14;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z-i*8))
-}
+  document.getElementById("playbook").style.display="block";
 
-/* ================= INPUT ================= */
-const keys={}
-addEventListener("keydown",e=>{
-keys[e.key]=true
-if("1234".includes(e.key))setRoute(+e.key)
-if(e.key==="Enter"){
-state="LIVE"
-document.getElementById("playcall").style.display="none"
-}
-})
-addEventListener("keyup",e=>keys[e.key]=false)
+  /* EVENTS */
+  addEventListener("resize",()=> {
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  });
 
-/* ================= GAME LOOP ================= */
-function update(){
+  document.addEventListener("keydown",e=>{
+    keys[e.key.toLowerCase()]=true;
+    if(e.key==="Enter" && state==="PLAYCALL"){
+      snapBall();
+    }
+    if("1234".includes(e.key)) currentRoute=parseInt(e.key);
+  });
 
-/* CAMERA ALWAYS RUNS */
-camera.position.lerp(
-new THREE.Vector3(
-qb.position.x-140,
-140,
-qb.position.z+220
-),0.08
-)
-camera.lookAt(qb.position)
+  document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 
-/* FREEZE BEFORE SNAP */
-if(state==="PLAYCALL")return
+  document.body.addEventListener("click",()=>{
+    document.body.requestPointerLock();
+  });
 
-/* QB MOVEMENT */
-if(keys.w)qb.position.x+=qb.speed
-if(keys.s)qb.position.x-=qb.speed
-if(keys.a)qb.position.z-=qb.speed
-if(keys.d)qb.position.z+=qb.speed
-
-/* Run animation */
-qb.anim+=0.2
-qb.position.y=15+Math.sin(qb.anim)*2
-
-/* WR ROUTE */
-if(wr.route.length&&wr.step<wr.route.length){
-wr.position.lerp(wr.route[wr.step],0.08)
-if(wr.position.distanceTo(wr.route[wr.step])<5)wr.step++
+  document.addEventListener("mousemove",e=>{
+    if(document.pointerLockElement){
+      mouse.x+=e.movementX*0.002;
+      mouse.y+=e.movementY*0.002;
+      mouse.y=Math.max(-1.2,Math.min(1.2,mouse.y));
+    }
+  });
 }
 
-/* THROW */
-if(keys[" "]&&!ball.live){
-ball.position.copy(qb.position)
-ball.velocity.set(
-(wr.position.x-qb.position.x)/28,
-0.9,
-(wr.position.z-qb.position.z)/28
-)
-ball.live=true
+/* ===============================
+   PLAYERS
+================================ */
+let qb,receivers=[],defenders=[];
+
+function createPlayers(){
+  qb=box(0,5,0,0xcccccc);
+  for(let i=0;i<3;i++){
+    let wr=box(-20,5,-80+i*80,0x800080);
+    receivers.push(wr);
+  }
+  for(let i=0;i<4;i++){
+    let db=box(60,5,-120+i*80,0xff0000);
+    defenders.push(db);
+  }
 }
 
-/* BALL PHYSICS */
-if(ball.live){
-ball.velocity.y-=0.04
-ball.position.add(ball.velocity)
+function box(x,y,z,c){
+  let m=new THREE.Mesh(
+    new THREE.BoxGeometry(12,20,12),
+    new THREE.MeshStandardMaterial({color:c})
+  );
+  m.position.set(x,y,z);
+  scene.add(m);
+  return m;
 }
 
-/* CATCH */
-if(ball.live&&ball.position.distanceTo(wr.position)<10){
-ball.live=false
-wr.hasBall=true
+/* ===============================
+   GAME LOGIC
+================================ */
+function snapBall(){
+  state="PLAY";
+  snapped=true;
+  document.getElementById("playbook").style.display="none";
 }
 
-/* DEFENSE + TACKLE */
-defenders.forEach(d=>{
-const target=wr.hasBall?wr:qb
-d.position.lerp(target.position,0.02)
-if(wr.hasBall&&d.position.distanceTo(wr.position)<12){
-wr.hasBall=false
-state="PLAYCALL"
-document.getElementById("playcall").style.display="block"
-wr.position.set(-700,15,-100)
-qb.position.set(-700,15,0)
-}
-})
+function throwBall(){
+  if(ballVel.length()>0) return;
+  ball.position.copy(qb.position);
+  let dir=new THREE.Vector3(
+    Math.sin(mouse.x),
+    Math.sin(-mouse.y)+0.2,
+    Math.cos(mouse.x)
+  ).normalize();
+  ballVel.copy(dir.multiplyScalar(500));
 }
 
-/* ================= RENDER ================= */
+function updateRoutes(dt){
+  receivers.forEach((wr,i)=>{
+    if(!snapped) return;
+    let s=120*dt;
+    if(currentRoute===1){wr.position.x+=s;wr.position.z+=s*0.4;}
+    if(currentRoute===2){wr.position.x+=s;}
+    if(currentRoute===3){wr.position.x+=s;wr.position.z+=s;}
+    if(currentRoute===4){wr.position.x+=s;wr.position.z-=s;}
+  });
+}
+
+function updateDefense(dt){
+  defenders.forEach(db=>{
+    let t=receivers[0];
+    let d=t.position.clone().sub(db.position).normalize();
+    db.position.add(d.multiplyScalar(90*dt));
+  });
+}
+
+/* ===============================
+   UPDATE LOOP
+================================ */
 function animate(){
-requestAnimationFrame(animate)
-update()
-renderer.render(scene,camera)
-}
-animate()
+  requestAnimationFrame(animate);
+  let dt=clock.getDelta();
 
-addEventListener("resize",()=>{
-camera.aspect=innerWidth/innerHeight
-camera.updateProjectionMatrix()
-renderer.setSize(innerWidth,innerHeight)
-})
+  /* CAMERA ALWAYS */
+  camera.position.lerp(
+    new THREE.Vector3(
+      qb.position.x-160,
+      160,
+      qb.position.z+260
+    ),0.08
+  );
+  camera.lookAt(qb.position);
+
+  if(state==="PLAY"){
+    let speed=180*dt;
+    if(keys["w"]) qb.position.x+=speed;
+    if(keys["s"]) qb.position.x-=speed;
+    if(keys["a"]) qb.position.z+=speed;
+    if(keys["d"]) qb.position.z-=speed;
+    if(keys[" "] ) throwBall();
+  }
+
+  updateRoutes(dt);
+  updateDefense(dt);
+
+  if(ballVel.length()>0){
+    ball.position.add(ballVel.clone().multiplyScalar(dt));
+    ballVel.y-=980*dt;
+    if(ball.position.y<4){
+      ballVel.set(0,0,0);
+    }
+  }
+
+  renderer.render(scene,camera);
+}
+
+function addEndzone(x,color){
+  let ez=new THREE.Mesh(
+    new THREE.PlaneGeometry(200,800),
+    new THREE.MeshStandardMaterial({color})
+  );
+  ez.rotation.x=-Math.PI/2;
+  ez.position.x=x;
+  scene.add(ez);
+}
 </script>
 </body>
 </html>
