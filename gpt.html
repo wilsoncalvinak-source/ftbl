@@ -1,206 +1,192 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>EXODUS Football</title>
+<meta charset="utf-8">
+<title>EXODUS 3D Football</title>
 <style>
-body{margin:0;background:#12001f;color:white;font-family:Arial}
-canvas{display:block;margin:auto;background:#2a0040}
+body { margin:0; overflow:hidden; background:black }
+#ui {
+position:absolute; top:10px; left:10px; color:white;
+font-family:Arial; font-size:16px;
+}
 </style>
 </head>
 <body>
-<canvas id="game" width="1280" height="720"></canvas>
+<div id="ui">
+<b>EXODUS FOOTBALL</b><br>
+WASD Move | Mouse Look | Space Throw<br>
+1 Slant | 2 Streak | 3 Out | 4 Post
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+
 <script>
-const canvas=document.getElementById("game")
-const ctx=canvas.getContext("2d")
+/* ================= SCENE ================= */
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x1b0033)
 
-/* ================= CORE STATE ================= */
-let score=0,down=1,toGo=10,clock=600,ballSnapped=false,camX=0
-let selectedRoute=0,selectedPlayer=0
-const keys={}
-addEventListener("keydown",e=>keys[e.key]=true)
-addEventListener("keyup",e=>keys[e.key]=false)
+const camera = new THREE.PerspectiveCamera(
+75, window.innerWidth/window.innerHeight, 0.1, 2000
+)
 
-/* ================= UTIL ================= */
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v))
-const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y)
+const renderer = new THREE.WebGLRenderer({ antialias:true })
+renderer.setSize(window.innerWidth, window.innerHeight)
+document.body.appendChild(renderer.domElement)
 
-/* ================= PLAYER ================= */
-class Player{
-constructor(x,y,role){
-this.x=x;this.y=y;this.w=22;this.h=22
-this.vx=0;this.vy=0;this.s=4
-this.route=[];this.step=0;this.role=role
-this.carry=false;this.color=role==="QB"?"gold":"white"
-}
-update(){
-if(this.role!=="QB"&&ballSnapped&&this.route.length){
-let t=this.route[this.step]
-if(t){
-this.x+=Math.sign(t.x-this.x)*this.s
-this.y+=Math.sign(t.y-this.y)*this.s
-if(dist(this,t)<5)this.step++
-}
-}
-if(this.carry){
-if(keys.w)this.y-=this.s
-if(keys.s)this.y+=this.s
-if(keys.a)this.x-=this.s
-if(keys.d)this.x+=this.s
-}
-this.x=clamp(this.x,0,canvas.width)
-this.y=clamp(this.y,0,canvas.height)
-}
-draw(){
-ctx.fillStyle=this.color
-ctx.fillRect(this.x-camX,this.y,this.w,this.h)
-}
+/* ================= LIGHTING ================= */
+scene.add(new THREE.AmbientLight(0xffffff,0.6))
+const sun = new THREE.DirectionalLight(0xffffff,0.6)
+sun.position.set(300,500,200)
+scene.add(sun)
+
+/* ================= FIELD ================= */
+const fieldGeo = new THREE.PlaneGeometry(2000,800)
+const fieldMat = new THREE.MeshStandardMaterial({ color:0x2a7b2a })
+const field = new THREE.Mesh(fieldGeo,fieldMat)
+field.rotation.x = -Math.PI/2
+scene.add(field)
+
+/* Yard lines */
+for(let i=-900;i<=900;i+=100){
+const lGeo = new THREE.PlaneGeometry(4,800)
+const lMat = new THREE.MeshBasicMaterial({ color:0xffffff })
+const line = new THREE.Mesh(lGeo,lMat)
+line.rotation.x=-Math.PI/2
+line.position.x=i
+scene.add(line)
 }
 
-/* ================= DEFENDER ================= */
-class Defender{
-constructor(x,y){
-this.x=x;this.y=y;this.s=2.5;this.w=22;this.h=22
-}
-update(target){
-this.x+=Math.sign(target.x-this.x)*this.s
-this.y+=Math.sign(target.y-this.y)*this.s
-}
-draw(){
-ctx.fillStyle="red"
-ctx.fillRect(this.x-camX,this.y,this.w,this.h)
-}
+/* ================= PLAYER FACTORY ================= */
+function makePlayer(color){
+const geo = new THREE.BoxGeometry(15,30,15)
+const mat = new THREE.MeshStandardMaterial({ color })
+const p = new THREE.Mesh(geo,mat)
+p.position.y = 15
+p.speed = 3
+p.route = []
+p.step = 0
+p.hasBall = false
+scene.add(p)
+return p
 }
 
 /* ================= BALL ================= */
-class Ball{
-constructor(){
-this.x=0;this.y=0;this.vx=0;this.vy=0;this.live=false
-}
-throw(from,to){
-this.x=from.x;this.y=from.y
-this.vx=(to.x-from.x)/25
-this.vy=(to.y-from.y)/25
-this.live=true
-}
-update(){
-if(this.live){
-this.x+=this.vx
-this.y+=this.vy
-this.vy+=0.15
-}
-}
-draw(){
-ctx.fillStyle="#7b3f00"
-ctx.beginPath()
-ctx.arc(this.x-camX,this.y,6,0,Math.PI*2)
-ctx.fill()
-}
+const ballGeo = new THREE.SphereGeometry(4,16,16)
+const ballMat = new THREE.MeshStandardMaterial({ color:0x7a3b00 })
+const ball = new THREE.Mesh(ballGeo,ballMat)
+ball.velocity = new THREE.Vector3()
+ball.live = false
+scene.add(ball)
+
+/* ================= PLAYERS ================= */
+const qb = makePlayer(0xffd700)
+qb.position.set(-700,15,0)
+
+const wr = makePlayer(0xffffff)
+wr.position.set(-700,15,-80)
+
+const defenders = []
+for(let i=0;i<4;i++){
+const d = makePlayer(0xaa0000)
+d.position.set(-200+i*80,15,(i%2?100:-100))
+defenders.push(d)
 }
 
 /* ================= ROUTES ================= */
-function makeRoute(p,type){
-p.route=[]
-p.step=0
-let x=p.x,y=p.y
-if(type===1)for(let i=0;i<8;i++)p.route.push({x:x+i*15,y:y})
-if(type===2)for(let i=0;i<12;i++)p.route.push({x:x+i*15,y:y-i*6})
-if(type===3)for(let i=0;i<8;i++)p.route.push({x:x+i*10,y:y+20})
-if(type===4)for(let i=0;i<10;i++)p.route.push({x:x+i*14,y:y-i*3})
+function setRoute(type){
+wr.route=[]
+wr.step=0
+let x=wr.position.x,z=wr.position.z
+if(type===1)for(let i=0;i<12;i++)wr.route.push(new THREE.Vector3(x+i*20,15,z))
+if(type===2)for(let i=0;i<18;i++)wr.route.push(new THREE.Vector3(x+i*20,15,z))
+if(type===3)for(let i=0;i<12;i++)wr.route.push(new THREE.Vector3(x+i*15,15,z+60))
+if(type===4)for(let i=0;i<16;i++)wr.route.push(new THREE.Vector3(x+i*18,15,z-i*8))
 }
 
-/* ================= FIELD ================= */
-function drawField(){
-ctx.fillStyle="#3a005c"
-ctx.fillRect(0,0,canvas.width,canvas.height)
-ctx.strokeStyle="white"
-for(let i=0;i<canvas.width;i+=100){
-ctx.beginPath();ctx.moveTo(i-camX,0);ctx.lineTo(i-camX,720);ctx.stroke()
-}
-ctx.fillStyle="purple"
-ctx.fillRect(-camX,0,100,720)
-ctx.fillRect(1180-camX,0,100,720)
-ctx.fillStyle="white"
-ctx.font="50px Arial"
-ctx.fillText("EXODUS",30-camX,360)
-}
+/* ================= INPUT ================= */
+const keys={}
+addEventListener("keydown",e=>{
+keys[e.key]=true
+if(e.key==="1")setRoute(1)
+if(e.key==="2")setRoute(2)
+if(e.key==="3")setRoute(3)
+if(e.key==="4")setRoute(4)
+})
+addEventListener("keyup",e=>keys[e.key]=false)
 
-/* ================= HUD ================= */
-function hud(){
-ctx.fillStyle="white"
-ctx.font="18px Arial"
-ctx.fillText("Score: "+score,20,30)
-ctx.fillText("Down: "+down+" | To Go: "+toGo,20,55)
-ctx.fillText("Clock: "+Math.floor(clock),20,80)
-ctx.fillText("Routes: 1 Slant  2 Streak  3 Out  4 Post",20,110)
-}
-
-/* ================= SETUP ================= */
-const qb=new Player(200,360,"QB")
-const wr1=new Player(200,300,"WR")
-const wr2=new Player(200,420,"WR")
-const offense=[qb,wr1,wr2]
-const defense=[new Defender(700,260),new Defender(740,460),new Defender(820,360)]
-const ball=new Ball()
-
-/* ================= LOGIC ================= */
-function logic(){
-clock-=1/60
-if(keys["Enter"]&&!ballSnapped)ballSnapped=true
-if(keys["Tab"])selectedPlayer=(selectedPlayer+1)%offense.length
-if(keys["1"])makeRoute(wr1,1)
-if(keys["2"])makeRoute(wr1,2)
-if(keys["3"])makeRoute(wr1,3)
-if(keys["4"])makeRoute(wr1,4)
-
-offense.forEach(p=>p.update())
-defense.forEach(d=>d.update(ball.live?ball:wr1))
-
-if(keys[" "]&&!ball.live&&ballSnapped){
-ball.throw(qb,wr1)
-}
-
-ball.update()
-camX=qb.x-300
-
-if(dist(ball,wr1)<15&&ball.live){
-ball.live=false
-wr1.carry=true
-}
-
-defense.forEach(d=>{
-if(dist(d,wr1)<18){
-down++
-wr1.carry=false
-ballSnapped=false
-wr1.x=200;wr1.y=300
-}
+/* Mouse look */
+let mx=0,my=0
+addEventListener("mousemove",e=>{
+mx=(e.clientX/window.innerWidth-0.5)*2
+my=(e.clientY/window.innerHeight-0.5)*2
 })
 
-if(wr1.x>1180){
-score+=7
-down=1
-ballSnapped=false
-wr1.x=200
-}
+/* ================= GAME LOOP ================= */
+function update(){
+/* QB movement */
+if(keys.w)qb.position.x+=qb.speed
+if(keys.s)qb.position.x-=qb.speed
+if(keys.a)qb.position.z-=qb.speed
+if(keys.d)qb.position.z+=qb.speed
+
+/* WR route */
+if(wr.route.length && wr.step<wr.route.length){
+wr.position.lerp(wr.route[wr.step],0.08)
+if(wr.position.distanceTo(wr.route[wr.step])<5)wr.step++
 }
 
-/* ================= DRAW ================= */
-function draw(){
-drawField()
-offense.forEach(p=>p.draw())
-defense.forEach(d=>d.draw())
-ball.draw()
-hud()
+/* Throw */
+if(keys[" "]&&!ball.live){
+ball.position.copy(qb.position)
+ball.velocity.set(
+(wr.position.x-qb.position.x)/30,
+0.8,
+(wr.position.z-qb.position.z)/30
+)
+ball.live=true
 }
 
-/* ================= LOOP ================= */
-function loop(){
-logic()
-draw()
-requestAnimationFrame(loop)
+/* Ball physics */
+if(ball.live){
+ball.velocity.y-=0.03
+ball.position.add(ball.velocity)
 }
-loop()
+
+/* Catch */
+if(ball.position.distanceTo(wr.position)<10 && ball.live){
+ball.live=false
+wr.hasBall=true
+}
+
+/* Defender AI */
+defenders.forEach(d=>{
+d.position.lerp(wr.hasBall?wr.position:qb.position,0.01)
+})
+
+/* Camera follow */
+camera.position.lerp(
+new THREE.Vector3(
+qb.position.x-120,
+120,
+qb.position.z+200
+),0.08
+)
+camera.lookAt(qb.position)
+}
+
+/* ================= RENDER ================= */
+function animate(){
+requestAnimationFrame(animate)
+update()
+renderer.render(scene,camera)
+}
+animate()
+
+window.addEventListener("resize",()=>{
+camera.aspect=window.innerWidth/window.innerHeight
+camera.updateProjectionMatrix()
+renderer.setSize(window.innerWidth,window.innerHeight)
+})
 </script>
 </body>
 </html>
